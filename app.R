@@ -4,12 +4,13 @@ library(lubridate)
 library(xml2)
 library(rvest)
 library(ggplot2)
+library(zoo)
 
 
 gt_cov_url <- 'https://health.gatech.edu/coronavirus/health-alerts'
 
 html <- read_html(gt_cov_url)
-case_dates <- html_nodes(html, "#node-707 tbody td , table:nth-child(4) td")
+case_dates <- html_nodes(html, "td")
 
 cases <- matrix(html_text(case_dates, trim =TRUE),ncol = 4, byrow = TRUE)%>%
     as_tibble()%>%
@@ -59,7 +60,7 @@ for(i in seq(nrow(cases))){
 gt_st_url <- 'https://health.gatech.edu/surveillance-testing-program-results'
 
 html_st <- read_html(gt_st_url)
-survey_test <- html_nodes(html_st, "#node-744 td")
+survey_test <- html_nodes(html_st, "table:nth-child(2) td")
 
 survey_tib <- matrix(html_text(survey_test, trim =TRUE),ncol = 3, byrow = TRUE)%>%
   as_tibble()%>%
@@ -105,7 +106,7 @@ survey_tib <- survey_tib%>%
   arrange(desc(Date))
 
 
-ui <- fluidPage(
+ui <- fixedPage(
 
     # Application title
     titlePanel("Covid Cases at Georgia Tech"),
@@ -118,7 +119,7 @@ ui <- fluidPage(
             dateRangeInput(
                 "selectedDates",
                 "Date Range",
-                start = "2020-08-01"
+                start = "2020-08-17"
                 ),
             checkboxGroupInput(
                 "selectedPosition",
@@ -137,6 +138,11 @@ ui <- fluidPage(
                     "Aggregated Cases - By Day" = 2,
                     "Aggregated Cases - By Month" = 3),
                 selected = 2
+            ),
+            checkboxInput(
+              "avgChoice",
+              "Display 7-Day Rolling Average",
+              FALSE
             ),
             radioButtons(
               "posRate",
@@ -211,7 +217,10 @@ server <- function(input, output) {
                # str_detect(CampusImpact, "Greek")
             )%>%
             group_by(DateReported)%>%
-            summarise(case_no = n())
+            summarise(case_no = n())%>%
+          mutate(
+            avg_seven = rollapply(case_no, 7, mean, align='right',fill=NA)
+          )
 
 
         ggplot(data = data_cases)+
@@ -221,6 +230,7 @@ server <- function(input, output) {
           xlab("Days")+
           ylab("Cases Reported")+
           ggtitle(paste("Cases Reported between", day(input$selectedDates[1]), month(input$selectedDates[1],label = TRUE,abbr = FALSE), year(input$selectedDates[1]),"and", day(input$selectedDates[2]), month(input$selectedDates[2],label = TRUE,abbr = FALSE), year(input$selectedDates[2]), sep=" "))+
+          {if(input$avgChoice==TRUE){geom_line(aes(x=DateReported,y=avg_seven),color='blue')}}+
           theme_classic()
 
             
